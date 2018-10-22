@@ -1,0 +1,7 @@
+[package]
+name = "huffman-rust"
+version = "0.1.0"
+authors = ["sagalasan <sagalasan@users.noreply.github.com>"]
+
+[dependencies]
+byteorder = "1.2.6"
