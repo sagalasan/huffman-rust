@@ -2,6 +2,12 @@
 name = "huffman-rust"
 version = "0.1.0"
 authors = ["sagalasan <sagalasan@users.noreply.github.com>"]
+description = "Encode and decode files using canonical huffman codes"
+repository = "https://github.com/sagalasan/huffman-rust"
+license = "MIT"
+readme = "README.md"
+keywords = ["huffman", "compression", "decompression"]
+categories = ["compression"]
 
 [dependencies]
 byteorder = "1.2.6"
