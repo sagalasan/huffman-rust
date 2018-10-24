@@ -9,7 +9,7 @@ Encode and decode files using canonical huffman codes.
 Place the following in your `Cargo.toml` file.
 
 ```toml
-huffman-rust = "0.1.0"
+huffman-rust = "0.1"
 ```
 
 ## Usage
