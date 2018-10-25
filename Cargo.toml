@@ -1,6 +1,6 @@
 [package]
 name = "huffman-rust"
-version = "0.1.1"
+version = "0.1.2-alpha"
 authors = ["sagalasan <sagalasan@users.noreply.github.com>"]
 description = "Encode and decode files using canonical huffman codes"
 repository = "https://github.com/sagalasan/huffman-rust"

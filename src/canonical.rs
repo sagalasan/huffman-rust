@@ -9,7 +9,7 @@ const MAX_U64_MASK: u64 = 1 << 63;
 
 pub type CodeBook = HashMap<u8, Vec<bool>>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LookupEntry {
     length: u8,
     codes: Vec<u8>,
@@ -21,14 +21,14 @@ impl LookupEntry {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CanonicalTree {
-    pub bytes: u64,
-    pub code_book: CodeBook,
+    code_book: CodeBook,
     lookup: BTreeMap<u64, LookupEntry>,
 }
 
 impl CanonicalTree {
-    pub fn new(bytes: u64, code_lengths: Vec<(u8, u8)>) -> CanonicalTree {
+    pub fn new(code_lengths: Vec<(u8, u8)>) -> CanonicalTree {
         // Build the canonical code book
         let code_book = canonical_code_book(&code_lengths);
 
@@ -36,13 +36,12 @@ impl CanonicalTree {
         let lookup = lookup_tree(&code_book);
 
         CanonicalTree {
-            bytes,
             code_book,
             lookup,
         }
     }
 
-    pub fn from_read<R: Read>(read: R) -> Result<CanonicalTree, Box<Error>> {
+    pub fn from_read<R: Read>(read: R) -> Result<(u64, CanonicalTree), Box<Error>> {
         // Keep track of state
         let mut bytes_read: u64 = 0;
         let mut freq_table: [u64; NUM_BYTES] = [0; NUM_BYTES];
@@ -67,7 +66,7 @@ impl CanonicalTree {
         // Get code lengths from huffman tree
         let code_lengths = huff_tree.get_code_lengths();
 
-        Ok(CanonicalTree::new(bytes_read, code_lengths))
+        Ok((bytes_read, CanonicalTree::new(code_lengths)))
     }
 
     pub fn encode<R: Read, W: Write>(&self, read: & mut R, write: & mut W) -> Result<(), Box<Error>> {
@@ -84,9 +83,24 @@ impl CanonicalTree {
         Ok(())
     }
 
-    pub fn decode<R: Read, W: Write>(&self, read: & mut R, write: & mut W) -> Result<(), Box<Error>> {
+    pub fn decode<R: Read, W: Write>(&self, read: &mut R, write: &mut W) -> Result<u64, Box<Error>> {
+        self.decode_impl(read, write, u64::max_value())
+    }
+
+    pub fn decode_exact<R: Read, W: Write>(&self, read: &mut R, write: &mut W, bytes: u64) -> Result<(), Box<Error>> {
+        let bytes_read = self.decode_impl(read, write, bytes)?;
+
+        if bytes_read != bytes {
+            return Err(From::from("File corrupt"));
+        }
+
+        Ok(())
+    }
+
+    fn decode_impl<R: Read, W: Write>(&self, read: &mut R, write: &mut W, bytes: u64) -> Result<u64, Box<Error>> {
         let mut bit_reader = BitReader::new(read);
 
+        let mut bytes_read: u64 = 0;
         let mut buf: [u8; 1] = [0; 1];
         let mut code: u64 = 0;
         let mut mask: u64 = MAX_U64_MASK;
@@ -105,7 +119,9 @@ impl CanonicalTree {
                     continue;
                 }
             } else if offset == 0 {
-                return Ok(())
+                return Ok(bytes_read);
+            } else if bytes_read == bytes {
+                return Ok(bytes_read);
             }
 
             // Find the lookup entry
@@ -118,6 +134,9 @@ impl CanonicalTree {
 
             // Lookup the index in the entry
             buf[0] = entry.codes[index as usize];
+
+            // Increment counter
+            bytes_read += 1;
 
             // Write out the byte
             write.write(&buf)?;
@@ -134,9 +153,23 @@ impl CanonicalTree {
             mask = 1 << entry.length as u64 - 1;
         }
     }
+
+    /// Get the raw code lengths used to build the tree.
+    ///
+    /// The index of the array corresponds to byte and the value corresponds to the length of the
+    /// code
+    pub fn code_lengths(&self) -> [u8; NUM_BYTES] {
+        let mut result = [0; NUM_BYTES];
+
+        for (&byte, code) in self.code_book.iter() {
+            result[byte as usize] = code.len() as u8;
+        }
+
+        result
+    }
 }
 
-pub fn canonical_code_book(code_lengths: &[(u8, u8)]) -> CodeBook {
+fn canonical_code_book(code_lengths: &[(u8, u8)]) -> CodeBook {
     // Sort by code_length and then by symbol
     let mut sorted = Vec::from(code_lengths);
     sorted.sort_by_key(|&(symbol, length)| (length,  symbol));
@@ -148,6 +181,10 @@ pub fn canonical_code_book(code_lengths: &[(u8, u8)]) -> CodeBook {
 
     let mut iter = sorted.iter().peekable();
     while let Some(&(symbol, length)) = iter.next() {
+        if length == 0 {
+            continue;
+        }
+
         result.insert(symbol, code_to_vec(length, code));
 
         if let Some(&&(_symbol_next, length_next)) = iter.peek() {
@@ -171,7 +208,7 @@ fn code_to_vec(length: u8, code: u64) -> Vec<bool> {
     vec
 }
 
-pub fn lookup_tree(code_book: &CodeBook) -> BTreeMap<u64, LookupEntry> {
+fn lookup_tree(code_book: &CodeBook) -> BTreeMap<u64, LookupEntry> {
     let mut tree = BTreeMap::new();
 
     // Group by lengths
@@ -221,6 +258,8 @@ mod tests {
     use std::io::Cursor;
     use std::vec::Vec;
 
+    const SMALL_STR: &'static str = "a small sample string";
+
     #[test]
     fn test_small_sample_string() {
         let text = "a small sample string";
@@ -228,9 +267,25 @@ mod tests {
         assert!(encode_decode_test(text.as_bytes()));
     }
 
+    #[test]
+    fn test_canonical_tree_equal() {
+        let (_bytes, tree1) = CanonicalTree::from_read(Cursor::new(SMALL_STR)).unwrap();
+
+        let raw_lengths = tree1.code_lengths();
+
+        let code_lenghts: Vec<(u8, u8)> = raw_lengths.iter().enumerate()
+            .map(|(i, &length)| (i as u8, length))
+            .filter(|&(_i, length)| length > 0)
+            .collect();
+
+        let tree2 = CanonicalTree::new(code_lenghts);
+
+        assert_eq!(tree1, tree2);
+    }
+
     fn encode_decode_test(text: &[u8]) -> bool {
         let mut encoded_cursor = Cursor::new(text);
-        let tree = CanonicalTree::from_read(&mut encoded_cursor).unwrap();
+        let (_bytes_read, tree) = CanonicalTree::from_read(&mut encoded_cursor).unwrap();
         encoded_cursor = Cursor::new(text);
 
         let mut encoded = Vec::new();
