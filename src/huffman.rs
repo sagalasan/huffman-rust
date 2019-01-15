@@ -47,20 +47,20 @@ impl <T> Node<T> {
     pub fn new(value: T) -> Node<T> {
         Node {
             value,
-            left: Option::None,
-            right: Option::None,
+            left: None,
+            right: None,
             parent: std::ptr::null_mut(),
         }
     }
 
     pub fn set_left(&mut self, mut node: Box<Node<T>>) {
         node.parent = self;
-        self.left = Option::Some(node);
+        self.left = Some(node);
     }
 
     pub fn set_right(&mut self, mut node: Box<Node<T>>) {
         node.parent = self;
-        self.right = Option::Some(node);
+        self.right = Some(node);
     }
 
     pub fn is_leaf(&self) -> bool {

@@ -1,4 +1,6 @@
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::io::{Read, Seek, SeekFrom, Write, BufReader, BufWriter};
+use std::fs::File;
+use std::path::Path;
 use std::error::Error;
 
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
@@ -92,6 +94,37 @@ impl<R: Read> Decoder<R> {
     }
 }
 
+/// Helper function to encode files.
+pub fn encode_file<P: AsRef<Path>>(in_file: P, out_file: P) -> Result<(), Box<Error>> {
+    if out_file.as_ref().exists() {
+        return Err(From::from("Out file already exists"));
+    }
+
+    let read = BufReader::new(File::open(in_file)?);
+    let write = BufWriter::new(File::create(out_file)?);
+
+    let mut encoder = Encoder::new(read)?;
+
+    encoder.encode(write)?;
+
+    Ok(())
+}
+
+/// Helper function to decode files.
+pub fn decode_file<P: AsRef<Path>>(in_file: P, out_file: P) -> Result<(), Box<Error>> {
+    if out_file.as_ref().exists() {
+        return Err(From::from("Out file already exists"));
+    }
+
+    let read = BufReader::new(File::open(in_file)?);
+    let write = BufWriter::new(File::create(out_file)?);
+
+    let mut decoder = Decoder::new(read);
+
+    decoder.decode(write)?;
+
+    Ok(())
+}
 
 #[cfg(test)]
 mod tests {

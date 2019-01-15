@@ -262,9 +262,7 @@ mod tests {
 
     #[test]
     fn test_small_sample_string() {
-        let text = "a small sample string";
-
-        assert!(encode_decode_test(text.as_bytes()));
+        assert!(encode_decode_test(SMALL_STR.as_bytes()));
     }
 
     #[test]
